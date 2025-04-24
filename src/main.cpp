@@ -86,6 +86,7 @@ const std::bitset<16>* availableBlocks[] = {
     T_TETROID,
     Z_TETROID
 };
+
 enum BlockType {
     I,
     J,
@@ -95,14 +96,7 @@ enum BlockType {
 using ShapeBits = std::bitset<16>;
 using MatrixBits = std::bitset<160>;
 
-struct Tetrimino {
-    BlockType type;
-    ShapeBits shapeBits[4];
-};
-
 const std::bitset<16> *currentBlockBitmap[4];
-    
-
 
 struct Rectangle
 {
@@ -116,7 +110,6 @@ const Rectangle playfield = {
     .w = 300,
     .h = 480
 };
-
 
 struct TextureState {
     SDL_Texture *textureX = NULL;
@@ -148,12 +141,6 @@ struct GameState {
     float fallSpeecAcc = 0.0;
 };
 
-struct Bounds {
-    bool canMoveRight = true;
-    bool canMoveLeft = true;
-    bool canMoveDown = true;
-};
-
 void clearInputs(InputState &inputState) {
     inputState.rightArrowDown = false;
     inputState.leftArrowDown = false;
@@ -179,30 +166,7 @@ MatrixBits convertShapeToMatrixBits(std::bitset<16> block, int xPos, int yPos) {
     return (board << (xPos + (yPos * 10)));
 }
 
-std::bitset<160> moveTetrimino(std::bitset<160> board, float x, float y) {
-    return board << ((int)x + ((int)y * 10));
-}
-
-void checkBounds(MatrixBits matrixBits, Bounds &bounds) {
-    for(int i = matrixBits.size() - 1; i >= 0; i--) {
-        if(matrixBits.test(i)) {
-            int lastDigit = i % 10;
-            if(lastDigit == 9) {
-                bounds.canMoveRight = false;
-            }
-
-            if(lastDigit == 0) {
-                bounds.canMoveLeft = false;
-            }
-
-            if(i >= 150) {
-                bounds.canMoveDown = false;
-            }
-        }
-    };
-}
-
-bool isCollision(ShapeBits shapeBits, int xPos, int yPos) {
+bool isOutOfBounds(ShapeBits shapeBits, int xPos, int yPos) {
     for(int y = 0; y < 4; y++) {
         for(int x = 0; x < 4; x++) {
             if(shapeBits.test(y * 4 + x)) {
@@ -215,7 +179,6 @@ bool isCollision(ShapeBits shapeBits, int xPos, int yPos) {
                 }
                 
                 if((yPos + y) >= 16) {
-                    std::cout << "col" << std::endl;
                     return true;
                 }
             }
@@ -238,14 +201,14 @@ std::vector<std::pair<int, int>> WALL_KICK_OFFSETS {
 MatrixBits getRotatedMatrix(ShapeBits shapeBits, int &xPos, int& yPos) {
     MatrixBits matrixBits = convertShapeToMatrixBits(shapeBits, xPos, yPos);
 
-    if(!isCollision(shapeBits, xPos, yPos)) {
+    if(!isOutOfBounds(shapeBits, xPos, yPos)) {
         return matrixBits;
     }
 
     for(const auto& offset : WALL_KICK_OFFSETS) {
         int newXPos = xPos + offset.first;
         int newYPos = yPos + offset.second;
-        if(!isCollision(shapeBits, newXPos, newYPos)) {
+        if(!isOutOfBounds(shapeBits, newXPos, newYPos)) {
             xPos = newXPos;
             yPos = newYPos;
             return convertShapeToMatrixBits(shapeBits, xPos, yPos);
@@ -266,14 +229,30 @@ void setCurrentBlockBitmap() {
 }
 
 void updateGameState(GameState &gameState, InputState &inputState) {
-    Bounds bounds;
-
-    // ShapeBits shapeBitsTemp = I_TETROID[gameState.rotationIndex]; //*currentBlockBitmap[gameState.rotationIndex];
-    gameState.shapeBits = I_TETROID[gameState.rotationIndex];
-    // gameState.shapeBits = *currentBlockBitmap[gameState.rotationIndex];
+    gameState.shapeBits = *currentBlockBitmap[gameState.rotationIndex];
     gameState.matrixBits = convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos, gameState.yPos);
 
-    if(isCollision(gameState.shapeBits, gameState.xPos, gameState.yPos + 1)) {
+    if(inputState.leftArrowDown) {
+        if(!isOutOfBounds(gameState.shapeBits, gameState.xPos - 1, gameState.yPos)) {
+            gameState.xPos -= 1;
+        }
+    }
+
+    if(inputState.rightArrowDown) {
+        if(!isOutOfBounds(gameState.shapeBits, gameState.xPos + 1, gameState.yPos)) {
+            gameState.xPos += 1;
+        }
+    }
+
+    if(inputState.upArrowDown) {
+        int rotationIndex = (gameState.rotationIndex + 1) & 0b11;
+        ShapeBits shapeBits = *currentBlockBitmap[rotationIndex];
+        getRotatedMatrix(shapeBits, gameState.xPos, gameState.yPos);
+        gameState.rotationIndex = rotationIndex;
+        return;
+    }
+
+    if(isOutOfBounds(gameState.shapeBits, gameState.xPos, gameState.yPos + 1)) {
         if(currentBlockBitmap[0] == &I_TETROID[0]) {
             std::cout << "I block" << std::endl;
         }
@@ -281,46 +260,22 @@ void updateGameState(GameState &gameState, InputState &inputState) {
         if(currentBlockBitmap[0] == &L_TETROID[0]) {
             std::cout << "L block" << std::endl;
         }
+
         gameState.playingFieldMatrixBits |= gameState.matrixBits;
         gameState.yPos = 0;
-        // setCurrentBlockBitmap();
-        return;
-        // gameState.xPos = 0;
-        // gameState.matrixBits = gameState.matrixBits >> 50;
-    }
-
-    if(inputState.leftArrowDown) {
-        checkBounds(gameState.matrixBits, bounds);
-        if(bounds.canMoveLeft) {
-            gameState.xPos -= 1;
-        }
-    }
-
-    if(inputState.rightArrowDown) {
-        checkBounds(gameState.matrixBits, bounds);
-        if(bounds.canMoveRight) {
-            gameState.xPos += 1;
-        }
-    }
-
-    if(inputState.upArrowDown) {
-        int rotationIndex = (gameState.rotationIndex + 1) & 0b11;
-        ShapeBits shapeBits = I_TETROID[rotationIndex];
-        getRotatedMatrix(shapeBits, gameState.xPos, gameState.yPos);
-        gameState.shapeBits = shapeBits;
-        gameState.rotationIndex = rotationIndex;
+        gameState.xPos = 5;
+        setCurrentBlockBitmap();
         return;
     }
 
     if(inputState.downArrowDown) {
-        checkBounds(gameState.matrixBits, bounds);
-        if(bounds.canMoveDown) {
+        if(!isOutOfBounds(gameState.shapeBits, gameState.xPos, gameState.yPos + 1)) {
             gameState.yPos += 1;
         }
     }
 
-
     gameState.fallSpeecAcc += gameState.fallSpeed;
+
     if(gameState.fallSpeecAcc >= 1.0) {
         gameState.matrixBits = gameState.matrixBits << 10;
         gameState.yPos += 1;

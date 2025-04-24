@@ -134,6 +134,15 @@ struct GameState {
     ShapeBits shapeBits;
     MatrixBits matrixBits;
     MatrixBits playingFieldMatrixBits;
+
+    MatrixBits IMatrixBits;
+    MatrixBits JMatrixBits;
+    MatrixBits LMatrixBits;
+    MatrixBits OMatrixBits;
+    MatrixBits SMatrixBits;
+    MatrixBits TMatrixBits;
+    MatrixBits ZMatrixBits;
+
     BlockType blockType = BlockType::L;
     int xPos = 0;
     int yPos = 0;
@@ -187,6 +196,10 @@ bool isOutOfBounds(ShapeBits shapeBits, int xPos, int yPos) {
     return false;
 }
 
+bool isCollision(MatrixBits matrixBits, MatrixBits playingFieldMatrixBits) {
+    return (matrixBits & playingFieldMatrixBits).any();
+}
+
 std::vector<std::pair<int, int>> WALL_KICK_OFFSETS {
     {1, 0},
     {-1, 0},
@@ -233,15 +246,24 @@ void updateGameState(GameState &gameState, InputState &inputState) {
     gameState.matrixBits = convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos, gameState.yPos);
 
     if(inputState.leftArrowDown) {
-        if(!isOutOfBounds(gameState.shapeBits, gameState.xPos - 1, gameState.yPos)) {
-            gameState.xPos -= 1;
+        if(isCollision(convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos - 1, gameState.yPos), gameState.playingFieldMatrixBits)) {
+            return;
         }
+        if(isOutOfBounds(gameState.shapeBits, gameState.xPos - 1, gameState.yPos)) {
+            return;
+        }
+        gameState.xPos -= 1;
     }
 
     if(inputState.rightArrowDown) {
-        if(!isOutOfBounds(gameState.shapeBits, gameState.xPos + 1, gameState.yPos)) {
-            gameState.xPos += 1;
+        if(isCollision(convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos + 1, gameState.yPos), gameState.playingFieldMatrixBits)) {
+            return;
         }
+        if(isOutOfBounds(gameState.shapeBits, gameState.xPos + 1, gameState.yPos)) {
+            return;
+        }
+
+        gameState.xPos += 1;
     }
 
     if(inputState.upArrowDown) {
@@ -252,13 +274,33 @@ void updateGameState(GameState &gameState, InputState &inputState) {
         return;
     }
 
-    if(isOutOfBounds(gameState.shapeBits, gameState.xPos, gameState.yPos + 1)) {
+    if(isOutOfBounds(gameState.shapeBits, gameState.xPos, gameState.yPos + 1) || isCollision(convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos, gameState.yPos + 1), gameState.playingFieldMatrixBits)) {
         if(currentBlockBitmap[0] == &I_TETROID[0]) {
-            std::cout << "I block" << std::endl;
+            gameState.IMatrixBits |= gameState.matrixBits;
+        }
+
+        if(currentBlockBitmap[0] == &J_TETROID[0]) {
+            gameState.JMatrixBits |= gameState.matrixBits;
         }
 
         if(currentBlockBitmap[0] == &L_TETROID[0]) {
-            std::cout << "L block" << std::endl;
+            gameState.LMatrixBits |= gameState.matrixBits;
+        }
+
+        if(currentBlockBitmap[0] == &O_TETROID[0]) {
+            gameState.OMatrixBits |= gameState.matrixBits;
+        }
+
+        if(currentBlockBitmap[0] == &S_TETROID[0]) {
+            gameState.SMatrixBits |= gameState.matrixBits;
+        }
+
+        if(currentBlockBitmap[0] == &T_TETROID[0]) {
+            gameState.TMatrixBits |= gameState.matrixBits;
+        }
+
+        if(currentBlockBitmap[0] == &Z_TETROID[0]) {
+            gameState.ZMatrixBits |= gameState.matrixBits;
         }
 
         gameState.playingFieldMatrixBits |= gameState.matrixBits;
@@ -349,7 +391,37 @@ void SDLRenderToScreen(SDL_Renderer *renderer, GameState &gameState, TextureStat
                     .w = BLOCK_SIZE_PX,
                     .h = BLOCK_SIZE_PX
                 };
+
                 SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
+
+                if(gameState.IMatrixBits.test(y * BOARD_WIDTH + x)) {
+                    SDL_SetRenderDrawColor(renderer, 255, 0, 255, 255);
+                }
+
+                if(gameState.JMatrixBits.test(y * BOARD_WIDTH + x)) {
+                    SDL_SetRenderDrawColor(renderer, 0, 255, 255, 255);
+                }
+
+                if(gameState.LMatrixBits.test(y * BOARD_WIDTH + x)) {
+                    SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
+                }
+
+                if(gameState.OMatrixBits.test(y * BOARD_WIDTH + x)) {
+                    SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
+                }
+
+                if(gameState.SMatrixBits.test(y * BOARD_WIDTH + x)) {
+                    SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+                }
+
+                if(gameState.TMatrixBits.test(y * BOARD_WIDTH + x)) {
+                    SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
+                }
+
+                if(gameState.ZMatrixBits.test(y * BOARD_WIDTH + x)) {
+                    SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
+                }
+
                 SDL_RenderFillRect(renderer, &blockRect);
             }
 
@@ -360,7 +432,35 @@ void SDLRenderToScreen(SDL_Renderer *renderer, GameState &gameState, TextureStat
                     .w = BLOCK_SIZE_PX,
                     .h = BLOCK_SIZE_PX
                 };
+
                 SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
+                if(currentBlockBitmap[0] == &I_TETROID[0]) {
+                    SDL_SetRenderDrawColor(renderer, 255, 0, 255, 255);
+                }
+
+                if(currentBlockBitmap[0] == &J_TETROID[0]) {
+                    SDL_SetRenderDrawColor(renderer, 0, 255, 255, 255);
+                }
+
+                if(currentBlockBitmap[0] == &L_TETROID[0]) {
+                    SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
+                }
+
+                if(currentBlockBitmap[0] == &O_TETROID[0]) {
+                    SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
+                }
+
+                if(currentBlockBitmap[0] == &S_TETROID[0]) {
+                    SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+                }
+
+                if(currentBlockBitmap[0] == &T_TETROID[0]) {
+                    SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
+                }
+
+                if(currentBlockBitmap[0] == &Z_TETROID[0]) {
+                    SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
+                }
                 SDL_RenderFillRect(renderer, &blockRect);
             }
             i++;

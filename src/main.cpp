@@ -8,12 +8,9 @@
 #include <SDL2/SDL_surface.h>
 #include <SDL2/SDL_timer.h>
 
-#include <array>
 #include <bitset>
 #include <cstdint>
 #include <cstdlib>
-#include <iostream>
-#include <ostream>
 #include <random>
 #include <sys/types.h>
 #include <utility>

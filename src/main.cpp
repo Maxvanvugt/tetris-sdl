@@ -146,13 +146,16 @@ struct GameState {
     MatrixBits TMatrixBits;
     MatrixBits ZMatrixBits;
 
-    BlockType blockType = BlockType::L;
     bool isCollisionDown = false;
     bool placeBlock = false;
     int xPos = 0;
     int yPos = 0;
     float fallSpeed = 0.02;
-    float fallSpeecAcc = 0.0;
+    float fallSpeedAcc = 0.0;
+
+    float rotationSpeed = 0.2;
+    float rotationSpeedAcc = 0.0;
+    bool canRotate = true;
 };
 
 void clearInputs(InputState &inputState) {
@@ -185,28 +188,6 @@ MatrixBits convertShapeToMatrixBits(std::bitset<16> block, int xPos, int yPos) {
     return (board << (xPos + (yPos * 10)));
 }
 
-bool isOutOfBounds(ShapeBits shapeBits, int xPos, int yPos) {
-    for(int y = 0; y < 4; y++) {
-        for(int x = 0; x < 4; x++) {
-            if(shapeBits.test(y * 4 + x)) {
-                if((xPos + x) >= 10) {
-                    return true;
-                }
-                
-                if((xPos + x) < 0) {
-                    return true;
-                }
-                
-                if((yPos + y) >= 16) {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
-}
-
-bool isCollision(MatrixBits matrixBits, MatrixBits playingFieldMatrixBits) {
 bool isCollision(ShapeBits shapeBits, MatrixBits playingFieldMatrixBits, int xPos, int yPos) {
     MatrixBits matrixBits = convertShapeToMatrixBits(shapeBits, xPos, yPos);
 
@@ -242,10 +223,11 @@ std::vector<std::pair<int, int>> WALL_KICK_OFFSETS {
     {1, -2},
 };
 
-void getRotatedMatrix(MatrixBits playingFieldMatrixBits, int &xPos, int& yPos, uint8_t& rotationIndex) {
+void setRotationData(MatrixBits playingFieldMatrixBits, int &xPos, int& yPos, uint8_t& rotationIndex) {
     uint8_t newRotationIndex = (rotationIndex + 1) & 0b11;
     ShapeBits shapeBits = *currentBlockBitmap[newRotationIndex];
 
+    bool hasCollision = isCollision(shapeBits, playingFieldMatrixBits, xPos, yPos);
 
     if(!isCollision(shapeBits, playingFieldMatrixBits, xPos, yPos)) {
         rotationIndex = newRotationIndex;
@@ -284,26 +266,20 @@ void updateGameState(GameState &gameState, InputState &inputState) {
     gameState.isCollisionDown = isCollision(gameState.shapeBits, gameState.playingFieldMatrixBits, gameState.xPos, gameState.yPos + 1);
 
     if(inputState.leftArrowDown) {
-
-        bool isCollisionLeft = isCollision(gameState.shapeBits, gameState.playingFieldMatrixBits, gameState.xPos - 1, gameState.yPos);
-
-        if(!isCollisionLeft) {
+        if(!isCollision(gameState.shapeBits, gameState.playingFieldMatrixBits, gameState.xPos - 1, gameState.yPos)) {
             gameState.xPos -= 1;
         }
     }
 
     if(inputState.rightArrowDown) {
-
-        bool isCollisionRight = isCollision(gameState.shapeBits, gameState.playingFieldMatrixBits, gameState.xPos + 1, gameState.yPos);
-
-        if(!isCollisionRight) {
+        if(!isCollision(gameState.shapeBits, gameState.playingFieldMatrixBits, gameState.xPos + 1, gameState.yPos)) {
             gameState.xPos += 1;
         }
     }
 
-    if(inputState.upArrowDown) {
-        getRotatedMatrix(gameState.playingFieldMatrixBits, gameState.xPos, gameState.yPos, gameState.rotationIndex);
-        return;
+    if(inputState.upArrowDown && gameState.canRotate) {
+        setRotationData(gameState.playingFieldMatrixBits, gameState.xPos, gameState.yPos, gameState.rotationIndex);
+        gameState.canRotate = false;
     }
 
     if(gameState.isCollisionDown && gameState.placeBlock) {
@@ -341,6 +317,7 @@ void updateGameState(GameState &gameState, InputState &inputState) {
         gameState.placeBlock = false;
         gameState.yPos = 0;
         gameState.xPos = 5;
+        gameState.rotationIndex = 0;
         setCurrentBlockBitmap();
         return;
     }
@@ -351,15 +328,20 @@ void updateGameState(GameState &gameState, InputState &inputState) {
         }
     }
 
-    gameState.fallSpeecAcc += gameState.fallSpeed;
+    gameState.fallSpeedAcc += gameState.fallSpeed;
+    gameState.rotationSpeedAcc += gameState.rotationSpeed;
 
-    if(gameState.fallSpeecAcc >= 1.0) {
+    if(gameState.rotationSpeedAcc >= 1.0) {
+        gameState.rotationSpeedAcc = 0;
+        gameState.canRotate = true;
+    }
+
+    if(gameState.fallSpeedAcc >= 1.0) {
         if(gameState.isCollisionDown) {
             gameState.placeBlock = true;
         } else {
-            gameState.matrixBits = gameState.matrixBits << 10;
             gameState.yPos += 1;
-            gameState.fallSpeecAcc = 0;
+            gameState.fallSpeedAcc = 0;
         }
     }
 }

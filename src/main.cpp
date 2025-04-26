@@ -216,22 +216,28 @@ std::vector<std::pair<int, int>> WALL_KICK_OFFSETS {
 
 MatrixBits getRotatedMatrix(ShapeBits shapeBits, int &xPos, int& yPos) {
     MatrixBits matrixBits = convertShapeToMatrixBits(shapeBits, xPos, yPos);
+void getRotatedMatrix(MatrixBits playingFieldMatrixBits, int &xPos, int& yPos, uint8_t& rotationIndex) {
+    uint8_t newRotationIndex = (rotationIndex + 1) & 0b11;
+    ShapeBits shapeBits = *currentBlockBitmap[newRotationIndex];
 
-    if(!isOutOfBounds(shapeBits, xPos, yPos)) {
-        return matrixBits;
+    if(!isOutOfBounds(shapeBits, xPos, yPos) && !isCollision(convertShapeToMatrixBits(shapeBits, xPos, yPos), playingFieldMatrixBits)) {
+        rotationIndex = newRotationIndex;
+        return;
     }
 
     for(const auto& offset : WALL_KICK_OFFSETS) {
         int newXPos = xPos + offset.first;
         int newYPos = yPos + offset.second;
-        if(!isOutOfBounds(shapeBits, newXPos, newYPos)) {
+        if(!isOutOfBounds(shapeBits, newXPos, newYPos) && !isCollision(convertShapeToMatrixBits(shapeBits, newXPos, newYPos), playingFieldMatrixBits)) {
             xPos = newXPos;
             yPos = newYPos;
             return convertShapeToMatrixBits(shapeBits, xPos, yPos);
+            rotationIndex = newRotationIndex;
+            return;
         }
     }
 
-    return false;
+    return;
 }
 
 void setCurrentBlockBitmap() {
@@ -267,17 +273,35 @@ void updateGameState(GameState &gameState, InputState &inputState) {
 
     if(inputState.leftArrowDown && isCollisionLeft) {
         gameState.xPos -= 1;
+    if(inputState.leftArrowDown) {
+
+        bool isCollisionLeft = (
+            !isCollision(convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos - 1, gameState.yPos), gameState.playingFieldMatrixBits) &&
+            !isOutOfBounds(gameState.shapeBits, gameState.xPos - 1, gameState.yPos)
+        );
+
+        if(isCollisionLeft) {
+            gameState.xPos -= 1;
+        }
     }
 
     if(inputState.rightArrowDown && isCollisionRight) {
         gameState.xPos += 1;
+    if(inputState.rightArrowDown) {
+
+        bool isCollisionRight = (
+            !isCollision(convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos + 1, gameState.yPos), gameState.playingFieldMatrixBits) &&
+            !isOutOfBounds(gameState.shapeBits, gameState.xPos + 1, gameState.yPos)
+        );
+
+        if(isCollisionRight) {
+
+            gameState.xPos += 1;
+        }
     }
 
     if(inputState.upArrowDown) {
-        int rotationIndex = (gameState.rotationIndex + 1) & 0b11;
-        ShapeBits shapeBits = *currentBlockBitmap[rotationIndex];
-        getRotatedMatrix(shapeBits, gameState.xPos, gameState.yPos);
-        gameState.rotationIndex = rotationIndex;
+        getRotatedMatrix(gameState.playingFieldMatrixBits, gameState.xPos, gameState.yPos, gameState.rotationIndex);
         return;
     }
 
@@ -502,6 +526,7 @@ void SDLRenderToScreen(SDL_Renderer *renderer, GameState &gameState, TextureStat
                     SDLRenderBlock(Z, renderer);
                 }
 
+
                 SDL_RenderFillRect(renderer, &blockRect);
                 continue;
             }
@@ -527,7 +552,6 @@ int main() {
     SDLInitialiseGame(window, renderer);
     setCurrentBlockBitmap();
 
-    // gameState.shapeBits = *currentBlockBitmap[0];
 
     while (inputState.running) {
         SDLHandleEvent(event, inputState);

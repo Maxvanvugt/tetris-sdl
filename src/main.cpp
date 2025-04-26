@@ -175,6 +175,11 @@ MatrixBits convertShapeToMatrixBits(std::bitset<16> block, int xPos, int yPos) {
     board |= std::bitset<160>(parts[2].to_ullong()) << (10);
     board |= std::bitset<160>(parts[3].to_ullong());
 
+    int shiftSize = (xPos + (yPos * 10));
+    if(shiftSize <= 0) {
+        return (board >> abs(shiftSize));
+    }
+
     return (board << (xPos + (yPos * 10)));
 }
 
@@ -205,6 +210,7 @@ bool isCollision(MatrixBits matrixBits, MatrixBits playingFieldMatrixBits) {
 
 std::vector<std::pair<int, int>> WALL_KICK_OFFSETS {
     {1, 0},
+    {2, 0},
     {-1, 0},
     {-2, 0},
     {0, -1},

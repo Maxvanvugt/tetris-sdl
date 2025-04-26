@@ -1,16 +1,17 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_blendmode.h>
 #include <SDL2/SDL_events.h>
-#include <SDL2/SDL_image.h>
-#include <SDL2/SDL_rect.h>
 #include <SDL2/SDL_render.h>
 #include <SDL2/SDL_stdinc.h>
 #include <SDL2/SDL_surface.h>
 #include <SDL2/SDL_timer.h>
 
+#include <array>
 #include <bitset>
 #include <cstdint>
 #include <cstdlib>
+#include <iostream>
+#include <ostream>
 #include <random>
 #include <sys/types.h>
 #include <utility>
@@ -127,6 +128,7 @@ struct InputState {
 
 struct GameState {
     bool running = true;
+    bool placeBlock = false;
     uint8_t rotationIndex = 1;
     ShapeBits shapeBits;
     MatrixBits matrixBits;
@@ -229,9 +231,11 @@ MatrixBits getRotatedMatrix(ShapeBits shapeBits, int &xPos, int& yPos) {
 }
 
 void setCurrentBlockBitmap() {
+    // Generate random number
     static std::mt19937 rng(time(nullptr));
     static std::uniform_int_distribution<int> dist(0, 6); // 0 or 1
     const std::bitset<16>* shapeBits = availableBlocks[dist(rng)];
+    // const std::bitset<16>* shapeBits = availableBlocks[0];
     currentBlockBitmap[0] = &shapeBits[0];
     currentBlockBitmap[1] = &shapeBits[1];
     currentBlockBitmap[2] = &shapeBits[2];
@@ -239,28 +243,28 @@ void setCurrentBlockBitmap() {
 }
 
 void updateGameState(GameState &gameState, InputState &inputState) {
-    gameState.shapeBits = *currentBlockBitmap[gameState.rotationIndex];
-    gameState.matrixBits = convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos, gameState.yPos);
+    if(!gameState.placeBlock) {
+        gameState.shapeBits = *currentBlockBitmap[gameState.rotationIndex];
+        gameState.matrixBits = convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos, gameState.yPos);
+    }
+
+    bool isCollisionDown = (
+        (isOutOfBounds(gameState.shapeBits, gameState.xPos, gameState.yPos + 1) ||
+        isCollision(convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos, gameState.yPos + 1), gameState.playingFieldMatrixBits))
+    );
 
     if(inputState.leftArrowDown) {
-        if(isCollision(convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos - 1, gameState.yPos), gameState.playingFieldMatrixBits)) {
-            return;
+        if(!isCollision(convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos - 1, gameState.yPos), gameState.playingFieldMatrixBits) &&
+            !isOutOfBounds(gameState.shapeBits, gameState.xPos - 1, gameState.yPos)) {
+            gameState.xPos -= 1;
         }
-        if(isOutOfBounds(gameState.shapeBits, gameState.xPos - 1, gameState.yPos)) {
-            return;
-        }
-        gameState.xPos -= 1;
     }
 
     if(inputState.rightArrowDown) {
-        if(isCollision(convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos + 1, gameState.yPos), gameState.playingFieldMatrixBits)) {
-            return;
+        if(!isCollision(convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos + 1, gameState.yPos), gameState.playingFieldMatrixBits) &&
+            !isOutOfBounds(gameState.shapeBits, gameState.xPos + 1, gameState.yPos)) {
+            gameState.xPos += 1;
         }
-        if(isOutOfBounds(gameState.shapeBits, gameState.xPos + 1, gameState.yPos)) {
-            return;
-        }
-
-        gameState.xPos += 1;
     }
 
     if(inputState.upArrowDown) {
@@ -271,7 +275,8 @@ void updateGameState(GameState &gameState, InputState &inputState) {
         return;
     }
 
-    if(isOutOfBounds(gameState.shapeBits, gameState.xPos, gameState.yPos + 1) || isCollision(convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos, gameState.yPos + 1), gameState.playingFieldMatrixBits)) {
+    if(isCollisionDown && gameState.placeBlock) {
+
         if(currentBlockBitmap[0] == &I_TETROID[0]) {
             gameState.IMatrixBits |= gameState.matrixBits;
         }
@@ -308,23 +313,27 @@ void updateGameState(GameState &gameState, InputState &inputState) {
     }
 
     if(inputState.downArrowDown) {
-        if(!isOutOfBounds(gameState.shapeBits, gameState.xPos, gameState.yPos + 1)) {
+        if(!isCollisionDown) {
             gameState.yPos += 1;
         }
     }
 
     gameState.fallSpeecAcc += gameState.fallSpeed;
 
+    gameState.placeBlock = false;
     if(gameState.fallSpeecAcc >= 1.0) {
-        gameState.matrixBits = gameState.matrixBits << 10;
-        gameState.yPos += 1;
-        gameState.fallSpeecAcc = 0;
+        if(isCollisionDown) {
+            gameState.placeBlock = true;
+        } else {
+            gameState.matrixBits = gameState.matrixBits << 10;
+            gameState.yPos += 1;
+            gameState.fallSpeecAcc = 0;
+        }
     }
 }
 
 void SDLInitialiseGame(SDL_Window *&window, SDL_Renderer *&renderer) {
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
-    IMG_Init(IMG_INIT_PNG);
     window = SDL_CreateWindow("Title", SDL_WINDOWPOS_CENTERED,
                               SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH, WINDOW_HEIGHT, 0);
     renderer = SDL_CreateRenderer(window, 0, 0);
@@ -377,90 +386,89 @@ void SDLRenderToScreen(SDL_Renderer *renderer, GameState &gameState, TextureStat
     SDL_SetRenderDrawColor(renderer, 5, 0, 5, 255);
     SDL_RenderFillRect(renderer, &playfieldSDL);
 
-    int i = 0;
     for(int y = 0; y < BOARD_HEIGHT; y++) {
         for(int x = 0; x < BOARD_WIDTH; x++) {
 
-            if(gameState.playingFieldMatrixBits.test(y * BOARD_WIDTH + x)) {
-                SDL_Rect blockRect = {
-                    .x = (BLOCK_SIZE_PX * x) + playfield.x,
-                    .y = (BLOCK_SIZE_PX * y) + playfield.y,
-                    .w = BLOCK_SIZE_PX,
-                    .h = BLOCK_SIZE_PX
-                };
+            SDL_Rect blockRect = {
+                .x = (BLOCK_SIZE_PX * x) + playfield.x,
+                .y = (BLOCK_SIZE_PX * y) + playfield.y,
+                .w = BLOCK_SIZE_PX,
+                .h = BLOCK_SIZE_PX
+            };
 
-                SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
+            int i = y * BOARD_WIDTH + x;
 
-                if(gameState.IMatrixBits.test(y * BOARD_WIDTH + x)) {
+            // Fill playing field
+            if (gameState.playingFieldMatrixBits.test(i)) {
+                bool isIBlock = gameState.IMatrixBits.test(i);
+                bool isJBlock = gameState.JMatrixBits.test(i);
+                bool isLBlock = gameState.LMatrixBits.test(i);
+                bool isOBlock = gameState.OMatrixBits.test(i);
+                bool isSBlock = gameState.SMatrixBits.test(i);
+                bool isTBlock = gameState.TMatrixBits.test(i);
+                bool isZBlock = gameState.ZMatrixBits.test(i);
+
+                if(isIBlock) {
                     SDL_SetRenderDrawColor(renderer, 255, 0, 255, 255);
                 }
-
-                if(gameState.JMatrixBits.test(y * BOARD_WIDTH + x)) {
+                if(isJBlock) {
                     SDL_SetRenderDrawColor(renderer, 0, 255, 255, 255);
                 }
-
-                if(gameState.LMatrixBits.test(y * BOARD_WIDTH + x)) {
+                if(isLBlock) {
                     SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
                 }
-
-                if(gameState.OMatrixBits.test(y * BOARD_WIDTH + x)) {
+                if(isOBlock) {
                     SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
                 }
-
-                if(gameState.SMatrixBits.test(y * BOARD_WIDTH + x)) {
+                if(isSBlock) {
                     SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
                 }
-
-                if(gameState.TMatrixBits.test(y * BOARD_WIDTH + x)) {
+                if(isTBlock) {
                     SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
                 }
-
-                if(gameState.ZMatrixBits.test(y * BOARD_WIDTH + x)) {
+                if(isZBlock) {
                     SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
                 }
 
                 SDL_RenderFillRect(renderer, &blockRect);
+                continue;
             }
 
-            if(gameState.matrixBits.test(y * BOARD_WIDTH + x)) {
-                SDL_Rect blockRect = {
-                    .x = (BLOCK_SIZE_PX * x) + playfield.x,
-                    .y = (BLOCK_SIZE_PX * y) + playfield.y,
-                    .w = BLOCK_SIZE_PX,
-                    .h = BLOCK_SIZE_PX
-                };
+            // Fill current field
+            if (gameState.matrixBits.test(i)) {
+                bool isIBlock = currentBlockBitmap[0] == &I_TETROID[0];
+                bool isJBlock = currentBlockBitmap[0] == &J_TETROID[0];
+                bool isLBlock = currentBlockBitmap[0] == &L_TETROID[0];
+                bool isOBlock = currentBlockBitmap[0] == &O_TETROID[0];
+                bool isSBlock = currentBlockBitmap[0] == &S_TETROID[0];
+                bool isTBlock = currentBlockBitmap[0] == &T_TETROID[0];
+                bool isZBlock = currentBlockBitmap[0] == &Z_TETROID[0];
 
-                SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
-                if(currentBlockBitmap[0] == &I_TETROID[0]) {
+                if(isIBlock) {
                     SDL_SetRenderDrawColor(renderer, 255, 0, 255, 255);
                 }
-
-                if(currentBlockBitmap[0] == &J_TETROID[0]) {
+                if(isJBlock) {
                     SDL_SetRenderDrawColor(renderer, 0, 255, 255, 255);
                 }
-
-                if(currentBlockBitmap[0] == &L_TETROID[0]) {
+                if(isLBlock) {
                     SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
                 }
-
-                if(currentBlockBitmap[0] == &O_TETROID[0]) {
+                if(isOBlock) {
                     SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
                 }
-
-                if(currentBlockBitmap[0] == &S_TETROID[0]) {
+                if(isSBlock) {
                     SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
                 }
-
-                if(currentBlockBitmap[0] == &T_TETROID[0]) {
+                if(isTBlock) {
                     SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
                 }
-
-                if(currentBlockBitmap[0] == &Z_TETROID[0]) {
+                if(isZBlock) {
                     SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
                 }
+
                 SDL_RenderFillRect(renderer, &blockRect);
+                continue;
             }
-            i++;
         }
     }
 

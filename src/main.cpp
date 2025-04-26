@@ -147,6 +147,8 @@ struct GameState {
     MatrixBits ZMatrixBits;
 
     BlockType blockType = BlockType::L;
+    bool isCollisionDown = false;
+    bool placeBlock = false;
     int xPos = 0;
     int yPos = 0;
     float fallSpeed = 0.02;
@@ -205,6 +207,26 @@ bool isOutOfBounds(ShapeBits shapeBits, int xPos, int yPos) {
 }
 
 bool isCollision(MatrixBits matrixBits, MatrixBits playingFieldMatrixBits) {
+bool isCollision(ShapeBits shapeBits, MatrixBits playingFieldMatrixBits, int xPos, int yPos) {
+    MatrixBits matrixBits = convertShapeToMatrixBits(shapeBits, xPos, yPos);
+
+    for(int y = 0; y < 4; y++) {
+        for(int x = 0; x < 4; x++) {
+            if(shapeBits.test(y * 4 + x)) {
+                if((xPos + x) >= 10) {
+                    return true;
+                }
+                
+                if((xPos + x) < 0) {
+                    return true;
+                }
+                
+                if((yPos + y) >= 16) {
+                    return true;
+                }
+            }
+        }
+    }
     return (matrixBits & playingFieldMatrixBits).any();
 }
 
@@ -220,13 +242,12 @@ std::vector<std::pair<int, int>> WALL_KICK_OFFSETS {
     {1, -2},
 };
 
-MatrixBits getRotatedMatrix(ShapeBits shapeBits, int &xPos, int& yPos) {
-    MatrixBits matrixBits = convertShapeToMatrixBits(shapeBits, xPos, yPos);
 void getRotatedMatrix(MatrixBits playingFieldMatrixBits, int &xPos, int& yPos, uint8_t& rotationIndex) {
     uint8_t newRotationIndex = (rotationIndex + 1) & 0b11;
     ShapeBits shapeBits = *currentBlockBitmap[newRotationIndex];
 
-    if(!isOutOfBounds(shapeBits, xPos, yPos) && !isCollision(convertShapeToMatrixBits(shapeBits, xPos, yPos), playingFieldMatrixBits)) {
+
+    if(!isCollision(shapeBits, playingFieldMatrixBits, xPos, yPos)) {
         rotationIndex = newRotationIndex;
         return;
     }
@@ -234,10 +255,9 @@ void getRotatedMatrix(MatrixBits playingFieldMatrixBits, int &xPos, int& yPos, u
     for(const auto& offset : WALL_KICK_OFFSETS) {
         int newXPos = xPos + offset.first;
         int newYPos = yPos + offset.second;
-        if(!isOutOfBounds(shapeBits, newXPos, newYPos) && !isCollision(convertShapeToMatrixBits(shapeBits, newXPos, newYPos), playingFieldMatrixBits)) {
+        if(!isCollision(shapeBits, playingFieldMatrixBits, newXPos, newYPos)) {
             xPos = newXPos;
             yPos = newYPos;
-            return convertShapeToMatrixBits(shapeBits, xPos, yPos);
             rotationIndex = newRotationIndex;
             return;
         }
@@ -259,49 +279,24 @@ void setCurrentBlockBitmap() {
 }
 
 void updateGameState(GameState &gameState, InputState &inputState) {
-        gameState.shapeBits = *currentBlockBitmap[gameState.rotationIndex];
-        gameState.matrixBits = convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos, gameState.yPos);
+    gameState.shapeBits = *currentBlockBitmap[gameState.rotationIndex];
+    gameState.matrixBits = convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos, gameState.yPos);
+    gameState.isCollisionDown = isCollision(gameState.shapeBits, gameState.playingFieldMatrixBits, gameState.xPos, gameState.yPos + 1);
 
-    bool isCollisionDown = (
-        (isOutOfBounds(gameState.shapeBits, gameState.xPos, gameState.yPos + 1) ||
-        isCollision(convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos, gameState.yPos + 1), gameState.playingFieldMatrixBits))
-    );
-
-    bool isCollisionLeft = (
-        !isCollision(convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos - 1, gameState.yPos), gameState.playingFieldMatrixBits) &&
-        !isOutOfBounds(gameState.shapeBits, gameState.xPos - 1, gameState.yPos)
-    );
-
-    bool isCollisionRight = (
-        !isCollision(convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos + 1, gameState.yPos), gameState.playingFieldMatrixBits) &&
-        !isOutOfBounds(gameState.shapeBits, gameState.xPos + 1, gameState.yPos)
-    );
-
-    if(inputState.leftArrowDown && isCollisionLeft) {
-        gameState.xPos -= 1;
     if(inputState.leftArrowDown) {
 
-        bool isCollisionLeft = (
-            !isCollision(convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos - 1, gameState.yPos), gameState.playingFieldMatrixBits) &&
-            !isOutOfBounds(gameState.shapeBits, gameState.xPos - 1, gameState.yPos)
-        );
+        bool isCollisionLeft = isCollision(gameState.shapeBits, gameState.playingFieldMatrixBits, gameState.xPos - 1, gameState.yPos);
 
-        if(isCollisionLeft) {
+        if(!isCollisionLeft) {
             gameState.xPos -= 1;
         }
     }
 
-    if(inputState.rightArrowDown && isCollisionRight) {
-        gameState.xPos += 1;
     if(inputState.rightArrowDown) {
 
-        bool isCollisionRight = (
-            !isCollision(convertShapeToMatrixBits(gameState.shapeBits, gameState.xPos + 1, gameState.yPos), gameState.playingFieldMatrixBits) &&
-            !isOutOfBounds(gameState.shapeBits, gameState.xPos + 1, gameState.yPos)
-        );
+        bool isCollisionRight = isCollision(gameState.shapeBits, gameState.playingFieldMatrixBits, gameState.xPos + 1, gameState.yPos);
 
-        if(isCollisionRight) {
-
+        if(!isCollisionRight) {
             gameState.xPos += 1;
         }
     }
@@ -311,7 +306,7 @@ void updateGameState(GameState &gameState, InputState &inputState) {
         return;
     }
 
-    if(isCollisionDown) {
+    if(gameState.isCollisionDown && gameState.placeBlock) {
 
         if(currentBlockBitmap[0] == &I_TETROID[0]) {
             gameState.IMatrixBits |= gameState.matrixBits;
@@ -342,6 +337,8 @@ void updateGameState(GameState &gameState, InputState &inputState) {
         }
 
         gameState.playingFieldMatrixBits |= gameState.matrixBits;
+        gameState.isCollisionDown = false;
+        gameState.placeBlock = false;
         gameState.yPos = 0;
         gameState.xPos = 5;
         setCurrentBlockBitmap();
@@ -349,7 +346,7 @@ void updateGameState(GameState &gameState, InputState &inputState) {
     }
 
     if(inputState.downArrowDown) {
-        if(!isCollisionDown) {
+        if(!gameState.isCollisionDown) {
             gameState.yPos += 1;
         }
     }
@@ -357,9 +354,13 @@ void updateGameState(GameState &gameState, InputState &inputState) {
     gameState.fallSpeecAcc += gameState.fallSpeed;
 
     if(gameState.fallSpeecAcc >= 1.0) {
-        // gameState.matrixBits = gameState.matrixBits << 10;
-        // gameState.yPos += 1;
-        gameState.fallSpeecAcc = 0;
+        if(gameState.isCollisionDown) {
+            gameState.placeBlock = true;
+        } else {
+            gameState.matrixBits = gameState.matrixBits << 10;
+            gameState.yPos += 1;
+            gameState.fallSpeecAcc = 0;
+        }
     }
 }
 

@@ -27,24 +27,24 @@ constexpr int PART_SIZE = 4;
 constexpr int SHIFT_SIZE = 16;
 
 const std::bitset<16> I_TETROID[4] = {
-    0b0000000011110000,
-    0b0100010001000100,
     0b0000111100000000,
     0b0010001000100010,
+    0b0000000011110000,
+    0b0100010001000100,
 };
 
 const std::bitset<16> J_TETROID[4] = {
+    0b0000010001110000,
     0b0000001100100010,
     0b0000000001110001,
     0b0000001000100110,
-    0b0000010001110000,
 };
 
 const std::bitset<16> L_TETROID[4] = {
-    0b0000000001110100,
-    0b0000011000100010,
     0b0000000101110000,
     0b0000001000100011,
+    0b0000000001110100,
+    0b0000011000100010,
 };
 
 const std::bitset<16> O_TETROID[4] = {
@@ -55,24 +55,24 @@ const std::bitset<16> O_TETROID[4] = {
 };
 
 const std::bitset<16> S_TETROID[4] = {
-    0b0000000000110110,
-    0b0000010001100010,
     0b0000001101100000,
     0b0000001000110001,
+    0b0000000000110110,
+    0b0000010001100010,
 };
 
 const std::bitset<16> T_TETROID[4] = {
-    0b0000000001110010,
-    0b0000001001100010,
     0b0000001001110000,
     0b0000001000110010,
+    0b0000000001110010,
+    0b0000001001100010,
 };
 
 const std::bitset<16> Z_TETROID[4] = {
-    0b0000000001100011,
-    0b0000001001100100,
     0b0000011000110000,
     0b0000000100110010,
+    0b0000000001100011,
+    0b0000001001100100,
 };
 
 const std::bitset<16>* availableBlocks[] = {
@@ -110,7 +110,7 @@ const Rectangle playfield = {
 const Rectangle nextTetrominoField = {
     .x = 350,
     .y = 25,
-    .w = 150,
+    .w = 100,
     .h = 150,
 };
 
@@ -578,48 +578,62 @@ void SDLRenderToScreen(SDL_Renderer* renderer,
         availableBlocks[gameState.nextBlockIndex];
 
     nextBlockBitmap[0] = &nextBlockBits[0];
+    nextBlockBitmap[1] = &nextBlockBits[1];
 
     SDLRenderScore(renderer, font, gameState.score);
+
+    bool nextIsIBlock = nextBlockBitmap[0] == &I_TETROID[0];
+    bool nextIsJBlock = nextBlockBitmap[0] == &J_TETROID[0];
+    bool nextIsLBlock = nextBlockBitmap[0] == &L_TETROID[0];
+    bool nextIsOBlock = nextBlockBitmap[0] == &O_TETROID[0];
+    bool nextIsSBlock = nextBlockBitmap[0] == &S_TETROID[0];
+    bool nextIsTBlock = nextBlockBitmap[0] == &T_TETROID[0];
+    bool nextIsZBlock = nextBlockBitmap[0] == &Z_TETROID[0];
+
+    int nextTetrominoOffsetX = 20;
+    int nextTetrominoOffsetY = 30;
+
+    if(nextIsIBlock) {
+        nextTetrominoOffsetX = 5;
+        nextTetrominoOffsetY = 15;
+    }
+
+    if(nextIsOBlock) {
+        nextTetrominoOffsetX = -10;
+        nextTetrominoOffsetY = 45;
+    }
 
     for (int y = 0; y < 4; y++) {
         for (int x = 0; x < 4; x++) {
             SDL_Rect blockRect = {
-                .x = (BLOCK_SIZE_PX * x) + nextTetrominoField.x + (25),
-                .y = (BLOCK_SIZE_PX * y) + nextTetrominoField.y + (50),
+                .x = (BLOCK_SIZE_PX * x) + nextTetrominoField.x + nextTetrominoOffsetX,
+                .y = (BLOCK_SIZE_PX * y) + nextTetrominoField.y + nextTetrominoOffsetY,
                 .w = BLOCK_SIZE_PX,
                 .h = BLOCK_SIZE_PX};
 
             int i = y * 4 + x;
 
-            if (nextBlockBitmap[0]->test(i)) {
+            if (nextBlockBitmap[1]->test(i)) {
 
-                bool isIBlock = nextBlockBitmap[0] == &I_TETROID[0];
-                bool isJBlock = nextBlockBitmap[0] == &J_TETROID[0];
-                bool isLBlock = nextBlockBitmap[0] == &L_TETROID[0];
-                bool isOBlock = nextBlockBitmap[0] == &O_TETROID[0];
-                bool isSBlock = nextBlockBitmap[0] == &S_TETROID[0];
-                bool isTBlock = nextBlockBitmap[0] == &T_TETROID[0];
-                bool isZBlock = nextBlockBitmap[0] == &Z_TETROID[0];
-
-                if (isIBlock) {
+                if (nextIsIBlock) {
                     SDLRenderBlock(I, renderer);
                 }
-                if (isJBlock) {
+                if (nextIsJBlock) {
                     SDLRenderBlock(J, renderer);
                 }
-                if (isLBlock) {
+                if (nextIsLBlock) {
                     SDLRenderBlock(L, renderer);
                 }
-                if (isOBlock) {
+                if (nextIsOBlock) {
                     SDLRenderBlock(O, renderer);
                 }
-                if (isSBlock) {
+                if (nextIsSBlock) {
                     SDLRenderBlock(S, renderer);
                 }
-                if (isTBlock) {
+                if (nextIsTBlock) {
                     SDLRenderBlock(T, renderer);
                 }
-                if (isZBlock) {
+                if (nextIsZBlock) {
                     SDLRenderBlock(Z, renderer);
                 }
 

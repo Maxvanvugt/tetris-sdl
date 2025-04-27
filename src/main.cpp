@@ -5,6 +5,7 @@
 #include <SDL2/SDL_stdinc.h>
 #include <SDL2/SDL_surface.h>
 #include <SDL2/SDL_timer.h>
+#include <SDL2/SDL_ttf.h>
 
 #include <sys/types.h>
 #include <bitset>
@@ -92,6 +93,7 @@ using ShapeBits = std::bitset<16>;
 using MatrixBits = std::bitset<160>;
 
 const std::bitset<16>* currentBlockBitmap[4];
+const std::bitset<16>* nextBlockBitmap[4];
 
 struct Rectangle {
     int x, y;
@@ -103,6 +105,13 @@ const Rectangle playfield = {
     .y = 25,
     .w = 300,
     .h = 480,
+};
+
+const Rectangle nextTetrominoField = {
+    .x = 350,
+    .y = 25,
+    .w = 150,
+    .h = 150,
 };
 
 struct TextureState {
@@ -134,6 +143,9 @@ struct TetroidMatrixBits {
 
 struct GameState {
     bool running = true;
+    bool gameOver = false;
+    int score = 0;
+    int nextBlockIndex = 0;
     uint8_t rotationIndex = 0;
     ShapeBits shapeBits;
     MatrixBits matrixBits;
@@ -215,7 +227,6 @@ void setRotationData(MatrixBits playingFieldMatrixBits,
                      int& xPos,
                      int& yPos,
                      uint8_t& rotationIndex) {
-
     uint8_t newRotationIndex = (rotationIndex + 1) & 0b11;
     ShapeBits shapeBits = *currentBlockBitmap[newRotationIndex];
 
@@ -281,19 +292,29 @@ void removeAndShiftRows(MatrixBits& playingFieldMatrixBits,
     }
 }
 
-void setCurrentBlockBitmap() {
-    // Generate random number
-    static std::mt19937 rng(time(nullptr));
-    static std::uniform_int_distribution<int> dist(0, 6);  // 0 or 1
-    const std::bitset<16>* shapeBits = availableBlocks[dist(rng)];
-    // const std::bitset<16>* shapeBits = availableBlocks[5];
+void setCurrentBlockBitmap(int nextBlockIndex) {
+    const std::bitset<16>* shapeBits = availableBlocks[nextBlockIndex];
     currentBlockBitmap[0] = &shapeBits[0];
     currentBlockBitmap[1] = &shapeBits[1];
     currentBlockBitmap[2] = &shapeBits[2];
     currentBlockBitmap[3] = &shapeBits[3];
 }
 
+void setNextBlockIndex(int& nextBlockIndex) {
+    // Generate random number
+    static std::mt19937 rng(time(nullptr));
+    static std::uniform_int_distribution<int> dist(0, 6);  // 0 or 1
+    nextBlockIndex = dist(rng);
+}
+
 void updateGameState(GameState& gameState, InputState& inputState) {
+    if(gameState.gameOver) {
+        if(inputState.rightArrowDown) {
+            gameState = *new GameState();
+        }
+        return;
+    }
+
     gameState.shapeBits = *currentBlockBitmap[gameState.rotationIndex];
     gameState.matrixBits = convertShapeToMatrixBits(
         gameState.shapeBits, gameState.xPos, gameState.yPos);
@@ -366,26 +387,44 @@ void updateGameState(GameState& gameState, InputState& inputState) {
         gameState.xPos = 5;
         gameState.rotationIndex = 0;
 
+        setCurrentBlockBitmap(gameState.nextBlockIndex);
+
+        setNextBlockIndex(gameState.nextBlockIndex);
+
+        ShapeBits shapeBits = *currentBlockBitmap[gameState.rotationIndex];
+        MatrixBits matrixBits = convertShapeToMatrixBits(
+            shapeBits, gameState.xPos, gameState.yPos);
+
+        if((matrixBits & gameState.playingFieldMatrixBits).any()) {
+            gameState.gameOver = true;
+        }
+
         std::vector<int> fullRows;
         checkForFullRows(gameState.playingFieldMatrixBits, fullRows);
+        if(fullRows.size() > 0) {
+            removeAndShiftRows(gameState.tetroidMatrixBits.IMatrixBits, fullRows);
+            removeAndShiftRows(gameState.tetroidMatrixBits.JMatrixBits, fullRows);
+            removeAndShiftRows(gameState.tetroidMatrixBits.LMatrixBits, fullRows);
+            removeAndShiftRows(gameState.tetroidMatrixBits.OMatrixBits, fullRows);
+            removeAndShiftRows(gameState.tetroidMatrixBits.SMatrixBits, fullRows);
+            removeAndShiftRows(gameState.tetroidMatrixBits.TMatrixBits, fullRows);
+            removeAndShiftRows(gameState.tetroidMatrixBits.ZMatrixBits, fullRows);
 
-        removeAndShiftRows(gameState.tetroidMatrixBits.IMatrixBits, fullRows);
-        removeAndShiftRows(gameState.tetroidMatrixBits.JMatrixBits, fullRows);
-        removeAndShiftRows(gameState.tetroidMatrixBits.LMatrixBits, fullRows);
-        removeAndShiftRows(gameState.tetroidMatrixBits.OMatrixBits, fullRows);
-        removeAndShiftRows(gameState.tetroidMatrixBits.SMatrixBits, fullRows);
-        removeAndShiftRows(gameState.tetroidMatrixBits.TMatrixBits, fullRows);
-        removeAndShiftRows(gameState.tetroidMatrixBits.ZMatrixBits, fullRows);
+            gameState.playingFieldMatrixBits =
+                gameState.tetroidMatrixBits.IMatrixBits |
+                gameState.tetroidMatrixBits.JMatrixBits |
+                gameState.tetroidMatrixBits.LMatrixBits |
+                gameState.tetroidMatrixBits.OMatrixBits |
+                gameState.tetroidMatrixBits.SMatrixBits |
+                gameState.tetroidMatrixBits.TMatrixBits |
+                gameState.tetroidMatrixBits.ZMatrixBits;
 
-        gameState.playingFieldMatrixBits =
-            gameState.tetroidMatrixBits.IMatrixBits |
-            gameState.tetroidMatrixBits.JMatrixBits |
-            gameState.tetroidMatrixBits.LMatrixBits |
-            gameState.tetroidMatrixBits.OMatrixBits |
-            gameState.tetroidMatrixBits.SMatrixBits |
-            gameState.tetroidMatrixBits.TMatrixBits |
-            gameState.tetroidMatrixBits.ZMatrixBits;
-        setCurrentBlockBitmap();
+            // Update score
+            gameState.score += (fullRows.size() * 100);
+            gameState.fallSpeed += 0.01;
+
+        }
+
         return;
     }
 
@@ -416,12 +455,21 @@ void updateGameState(GameState& gameState, InputState& inputState) {
     }
 }
 
-void SDLInitialiseGame(SDL_Window*& window, SDL_Renderer*& renderer) {
+void SDLInitialiseGame(SDL_Window*& window,
+                       SDL_Renderer*& renderer,
+                       TTF_Font*& font) {
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
+    TTF_Init();
     window = SDL_CreateWindow("Title", SDL_WINDOWPOS_CENTERED,
                               SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH,
                               WINDOW_HEIGHT, 0);
     renderer = SDL_CreateRenderer(window, 0, 0);
+
+    font = TTF_OpenFont("../AdwaitaSans-Regular.ttf", 20);
+
+    if (!font) {
+        SDL_Log("Failed to load font: %s", TTF_GetError());
+    }
 }
 
 void SDLHandleEvent(SDL_Event& event, InputState& inputState) {
@@ -491,16 +539,96 @@ void SDLRenderBlock(BlockType blockType, SDL_Renderer* renderer) {
     }
 }
 
+void SDLRenderScore(SDL_Renderer* renderer, TTF_Font* font, int score) {
+    SDL_Color textColor = {255, 255, 255, 255};
+    std::string scoreStr = "Score: " + std::to_string(score);
+    SDL_Surface* textSurface =
+        TTF_RenderText_Solid(font, scoreStr.c_str(), textColor);
+
+    SDL_Texture* textTexture =
+        SDL_CreateTextureFromSurface(renderer, textSurface);
+    SDL_FreeSurface(textSurface);
+
+    SDL_Rect textRect;
+    textRect.x = 360;
+    textRect.y = 200;
+    textRect.w = textSurface->w;
+    textRect.h = textSurface->h;
+    SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
+}
+
 void SDLRenderToScreen(SDL_Renderer* renderer,
+                       TTF_Font* font,
                        GameState& gameState,
                        TextureState& textureState) {
-    SDL_SetRenderDrawColor(renderer, 5, 54, 54, 255);
+    SDL_SetRenderDrawColor(renderer, 5, 0, 5, 255);
     SDL_RenderClear(renderer);
 
     SDL_Rect playfieldSDL = getSDLRect(playfield);
 
-    SDL_SetRenderDrawColor(renderer, 5, 0, 5, 255);
-    SDL_RenderFillRect(renderer, &playfieldSDL);
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    SDL_RenderDrawRect(renderer, &playfieldSDL);
+
+    SDL_Rect nextTetrominoFieldSDL = getSDLRect(nextTetrominoField);
+
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    SDL_RenderDrawRect(renderer, &nextTetrominoFieldSDL);
+
+    const std::bitset<16> *nextBlockBits =
+        availableBlocks[gameState.nextBlockIndex];
+
+    nextBlockBitmap[0] = &nextBlockBits[0];
+
+    SDLRenderScore(renderer, font, gameState.score);
+
+    for (int y = 0; y < 4; y++) {
+        for (int x = 0; x < 4; x++) {
+            SDL_Rect blockRect = {
+                .x = (BLOCK_SIZE_PX * x) + nextTetrominoField.x + (25),
+                .y = (BLOCK_SIZE_PX * y) + nextTetrominoField.y + (50),
+                .w = BLOCK_SIZE_PX,
+                .h = BLOCK_SIZE_PX};
+
+            int i = y * 4 + x;
+
+            if (nextBlockBitmap[0]->test(i)) {
+
+                bool isIBlock = nextBlockBitmap[0] == &I_TETROID[0];
+                bool isJBlock = nextBlockBitmap[0] == &J_TETROID[0];
+                bool isLBlock = nextBlockBitmap[0] == &L_TETROID[0];
+                bool isOBlock = nextBlockBitmap[0] == &O_TETROID[0];
+                bool isSBlock = nextBlockBitmap[0] == &S_TETROID[0];
+                bool isTBlock = nextBlockBitmap[0] == &T_TETROID[0];
+                bool isZBlock = nextBlockBitmap[0] == &Z_TETROID[0];
+
+                if (isIBlock) {
+                    SDLRenderBlock(I, renderer);
+                }
+                if (isJBlock) {
+                    SDLRenderBlock(J, renderer);
+                }
+                if (isLBlock) {
+                    SDLRenderBlock(L, renderer);
+                }
+                if (isOBlock) {
+                    SDLRenderBlock(O, renderer);
+                }
+                if (isSBlock) {
+                    SDLRenderBlock(S, renderer);
+                }
+                if (isTBlock) {
+                    SDLRenderBlock(T, renderer);
+                }
+                if (isZBlock) {
+                    SDLRenderBlock(Z, renderer);
+                }
+
+                SDL_RenderFillRect(renderer, &blockRect);
+
+                continue;
+            }
+        }
+    }
 
     for (int y = 0; y < BOARD_HEIGHT; y++) {
         for (int x = 0; x < BOARD_WIDTH; x++) {
@@ -597,15 +725,18 @@ void SDLRenderToScreen(SDL_Renderer* renderer,
 int main() {
     SDL_Window* window;
     SDL_Renderer* renderer;
+    TTF_Font* font;
 
     SDL_Event event;
     GameState gameState;
     InputState inputState;
     TextureState textureState;
 
-    SDLInitialiseGame(window, renderer);
-    setCurrentBlockBitmap();
+    SDLInitialiseGame(window, renderer, font);
 
+    setNextBlockIndex(gameState.nextBlockIndex);
+    setCurrentBlockBitmap(gameState.nextBlockIndex);
+    setNextBlockIndex(gameState.nextBlockIndex);
     // Debug for rotation;
     // gameState.playingFieldMatrixBits.set();
     // gameState.playingFieldMatrixBits <<= 130;
@@ -632,7 +763,7 @@ int main() {
         SDLHandleEvent(event, inputState);
         updateGameState(gameState, inputState);
 
-        SDLRenderToScreen(renderer, gameState, textureState);
+        SDLRenderToScreen(renderer, font, gameState, textureState);
         clearInputs(inputState);
         SDL_Delay(16);
     }
